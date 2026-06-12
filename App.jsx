@@ -54,12 +54,15 @@ const Card = ({ children, style, onClick, hover }) => (
 );
 
 const Field = ({ label, children }) => (
-  <label style={{ display: "block", marginBottom: 14 }}>
-    <div style={{ color: C.ash, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: .6, marginBottom: 6 }}>{label}</div>
-    {children}
+  <label style={{ display: "block", marginBottom: 18 }}>
+    <div style={{ color: C.goldLt, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 9, opacity: .85 }}>{label}</div>
+    <div onFocusCapture={e => { const el = e.currentTarget.querySelector("input,select,textarea"); if (el) { el.style.borderColor = C.gold; el.style.boxShadow = "0 0 0 3px rgba(230,180,60,.12)"; } }}
+         onBlurCapture={e => { const el = e.currentTarget.querySelector("input,select,textarea"); if (el) { el.style.borderColor = C.line; el.style.boxShadow = "none"; } }}>
+      {children}
+    </div>
   </label>
 );
-const inputStyle = { width: "100%", background: C.coal, border: `1px solid ${C.line}`, borderRadius: 10, color: C.cream, padding: "12px 14px", fontSize: 15, outline: "none", fontFamily: "inherit" };
+const inputStyle = { width: "100%", background: "#0E0E0E", border: `1px solid ${C.line}`, borderRadius: 12, color: C.cream, padding: "14px 16px", fontSize: 15, outline: "none", fontFamily: "inherit", boxSizing: "border-box", transition: "border-color .18s, box-shadow .18s" };
 
 const fmtDate = d => new Date(d + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 const daysLeft = d => Math.ceil((new Date(d + "T00:00:00") - new Date()) / 86400000);
@@ -161,8 +164,17 @@ function Login({ students, onLogin }) {
       <div style={{ width: "100%", maxWidth: 400 }}>
 
         {/* Full logo lockup */}
-        <div style={{ marginBottom: 26 }}>
+        <div style={{ marginBottom: 14 }}>
           <FullLogo width={230} />
+        </div>
+
+        {/* Founder name */}
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{
+            fontFamily: "Georgia,serif", fontSize: 17, fontWeight: 700, letterSpacing: ".5px",
+            background: `linear-gradient(135deg, ${C.goldLt}, ${C.gold} 55%, ${C.goldDk})`,
+            WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", color: C.gold,
+          }}>Dr. Sheref Elmorsy</div>
         </div>
 
         {/* Serif tagline */}
@@ -227,23 +239,9 @@ function Login({ students, onLogin }) {
   );
 }
 
-// Luxury input field styling
-const luxInput = {
-  width: "100%", background: "#0E0E0E", border: `1px solid ${C.line}`, borderRadius: 12,
-  color: C.cream, padding: "14px 16px", fontSize: 15, outline: "none", fontFamily: "inherit",
-  transition: "border-color .18s, box-shadow .18s",
-};
-function LuxField({ label, children }) {
-  return (
-    <label style={{ display: "block", marginBottom: 18 }}>
-      <div style={{ color: C.goldLt, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 9, opacity: .85 }}>{label}</div>
-      <div onFocusCapture={e => { const e2 = e.currentTarget.querySelector("input,select"); if (e2) { e2.style.borderColor = C.gold; e2.style.boxShadow = "0 0 0 3px rgba(230,180,60,.12)"; } }}
-           onBlurCapture={e => { const e2 = e.currentTarget.querySelector("input,select"); if (e2) { e2.style.borderColor = C.line; e2.style.boxShadow = "none"; } }}>
-        {children}
-      </div>
-    </label>
-  );
-}
+// Login uses the same luxury field styling as the rest of the app
+const luxInput = inputStyle;
+const LuxField = Field;
 
 // ---------------- STUDENT ----------------
 function Student({ me, homework, submissions, onExit, refresh }) {
