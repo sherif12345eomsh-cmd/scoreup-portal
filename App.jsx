@@ -6,6 +6,12 @@ import { supabase, isConfigured } from "./supabase.js";
    Teacher assigns · students do & submit · all data in Supabase
    ============================================================ */
 
+const GROUPS = [
+  "SAT-1","SAT-2","SAT-3","SAT-4","SAT-5",
+  "ACT-1","ACT-2","ACT-3","ACT-4","ACT-5",
+  "AP-1","AP-2","AP-3","AP-4","AP-5",
+];
+
 const C = {
   black: "#0A0A0A", coal: "#141414", panel: "#1A1A1A", raised: "#1E1E1E",
   gold: "#E6B43C", goldLt: "#F5D67A", goldDk: "#B8860B",
@@ -459,7 +465,7 @@ function TeacherHome({ students, homework, submissions, go }) {
 
 function CreateHomework({ homework, onCreated }) {
   const [f, setF] = useState({
-    id: "HW-" + String(homework.length + 1).padStart(3, "0"), title: "", group: "SAT-A",
+    id: "HW-" + String(homework.length + 1).padStart(3, "0"), title: "", group: GROUPS[0],
     subject: "Math", skill: "Algebra", difficulty: "Medium",
     due: new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10), mode: "quiz", instructions: "",
   });
@@ -481,7 +487,7 @@ function CreateHomework({ homework, onCreated }) {
       <h3 style={{ fontFamily: "Georgia,serif", fontSize: 20, marginBottom: 18 }}>Assign homework</h3>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         <Field label="Homework ID"><input style={inputStyle} value={f.id} onChange={e => set("id", e.target.value)} /></Field>
-        <Field label="Group"><select style={inputStyle} value={f.group} onChange={e => set("group", e.target.value)}><option>SAT-A</option><option>SAT-B</option></select></Field>
+        <Field label="Group"><select style={inputStyle} value={f.group} onChange={e => set("group", e.target.value)}>{GROUPS.map(g => <option key={g} value={g}>{g}</option>)}</select></Field>
       </div>
       <Field label="Title"><input style={inputStyle} value={f.title} placeholder="e.g. Quadratic Equations" onChange={e => set("title", e.target.value)} /></Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
