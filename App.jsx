@@ -736,6 +736,11 @@ function CreateHomework({ homework, onCreated }) {
     (f.mode === "quiz" ? qs.every(q => q.q.trim()) : f.mode === "file" ? !!hwFile : true);
 
   const save = async () => {
+    // Clear, specific validation messages instead of a silently-disabled button
+    if (!f.title.trim()) { setErr("Please enter a Title for the homework."); return; }
+    if (!f.instructions.trim()) { setErr("Please enter Instructions."); return; }
+    if (f.mode === "quiz" && !qs.some(q => q.q.trim())) { setErr("Add at least one question."); return; }
+    if (f.mode === "file" && !hwFile) { setErr("Attach the homework file students will download."); return; }
     setSaving(true); setErr("");
     try {
       let file_url = null, file_name = null;
@@ -743,13 +748,20 @@ function CreateHomework({ homework, onCreated }) {
         const safe = hwFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
         const path = `homework/${f.id}_${Date.now()}_${safe}`;
         const up = await supabase.storage.from("submissions").upload(path, hwFile, { upsert: true });
-        if (up.error) throw up.error;
+        if (up.error) throw new Error("File upload failed: " + up.error.message + " — make sure you ran add_file_homework.sql in Supabase.");
         file_url = supabase.storage.from("submissions").getPublicUrl(path).data.publicUrl;
         file_name = hwFile.name;
       }
-      const row = { ...f, questions: f.mode === "quiz" ? qs.filter(q => q.q.trim()) : [], file_url, file_name };
+      // ensure a unique id even if the typed one already exists
+      let id = f.id;
+      if (homework.some(h => h.id === id)) id = id + "-" + Date.now().toString().slice(-4);
+      const row = { ...f, id, questions: f.mode === "quiz" ? qs.filter(q => q.q.trim()) : [], file_url, file_name };
       const { error } = await supabase.from("homework").insert(row);
-      if (error) throw error;
+      if (error) {
+        if (/column .* does not exist|file_url|file_name/i.test(error.message))
+          throw new Error("The database is missing the file columns. Run add_file_homework.sql in Supabase, then try again.");
+        throw error;
+      }
       onCreated();
     } catch (e) { setErr(e.message || "Could not assign. Try again."); setSaving(false); }
   };
@@ -804,7 +816,7 @@ function CreateHomework({ homework, onCreated }) {
         </div>
       )}
       {err && <div style={{ background: C.redBg, color: C.red, fontSize: 14, fontWeight: 600, padding: "12px 14px", borderRadius: 10, marginTop: 16, border: `1px solid ${C.red}44` }}>⚠️ {err}</div>}
-      <div style={{ marginTop: 16 }}><Btn full disabled={!valid || saving} onClick={save}>{saving ? "Assigning…" : `Assign to ${f.group}`}</Btn></div>
+      <div style={{ marginTop: 16 }}><Btn full disabled={saving} onClick={save}>{saving ? "Assigning…" : `Assign to ${f.group}`}</Btn></div>
     </Card>
   );
 }
