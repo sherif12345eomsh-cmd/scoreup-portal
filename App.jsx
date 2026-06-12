@@ -329,13 +329,15 @@ function DoHomework({ hw, me, existing, onBack, onDone }) {
     let finalFileName = existing?.file_name || null;
     try {
       if (hw.mode === "upload" && photo) {
-        const path = `${me.id}/${hw.id}_${Date.now()}_${photo.name}`;
+        const safe = photo.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const path = `${me.id}/${hw.id}_${Date.now()}_${safe}`;
         const up = await supabase.storage.from("submissions").upload(path, photo, { upsert: true });
         if (up.error) throw up.error;
         finalPhotoUrl = supabase.storage.from("submissions").getPublicUrl(path).data.publicUrl;
       }
       if (hw.mode === "file" && answerFile) {
-        const path = `${me.id}/${hw.id}_answer_${Date.now()}_${answerFile.name}`;
+        const safe = answerFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const path = `${me.id}/${hw.id}_answer_${Date.now()}_${safe}`;
         const up = await supabase.storage.from("submissions").upload(path, answerFile, { upsert: true });
         if (up.error) throw up.error;
         finalPhotoUrl = supabase.storage.from("submissions").getPublicUrl(path).data.publicUrl;
@@ -738,7 +740,8 @@ function CreateHomework({ homework, onCreated }) {
     try {
       let file_url = null, file_name = null;
       if (f.mode === "file" && hwFile) {
-        const path = `homework/${f.id}_${Date.now()}_${hwFile.name}`;
+        const safe = hwFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const path = `homework/${f.id}_${Date.now()}_${safe}`;
         const up = await supabase.storage.from("submissions").upload(path, hwFile, { upsert: true });
         if (up.error) throw up.error;
         file_url = supabase.storage.from("submissions").getPublicUrl(path).data.publicUrl;
@@ -800,8 +803,8 @@ function CreateHomework({ homework, onCreated }) {
           <div style={{ marginTop: 10 }}><Btn kind="ghost" small onClick={() => setQs([...qs, { q: "", a: "" }])}>+ Add question</Btn></div>
         </div>
       )}
-      {err && <div style={{ color: C.red, fontSize: 13, marginTop: 12 }}>{err}</div>}
-      <div style={{ marginTop: 20 }}><Btn full disabled={!valid || saving} onClick={save}>{saving ? "Assigning…" : `Assign to ${f.group}`}</Btn></div>
+      {err && <div style={{ background: C.redBg, color: C.red, fontSize: 14, fontWeight: 600, padding: "12px 14px", borderRadius: 10, marginTop: 16, border: `1px solid ${C.red}44` }}>⚠️ {err}</div>}
+      <div style={{ marginTop: 16 }}><Btn full disabled={!valid || saving} onClick={save}>{saving ? "Assigning…" : `Assign to ${f.group}`}</Btn></div>
     </Card>
   );
 }
