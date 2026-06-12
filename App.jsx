@@ -443,13 +443,14 @@ function Teacher({ students, homework, submissions, onExit, refresh }) {
       <TopBar subtitle="Teacher dashboard" onExit={onExit} right={<Pill>{homework.length} assignments</Pill>} />
       <div style={{ maxWidth: 860, margin: "0 auto", padding: "24px 16px 60px" }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 22, flexWrap: "wrap" }}>
-          {[["home", "Overview"], ["create", "+ Assign homework"], ["students", "+ Add student"], ["subs", `Submissions (${submissions.length})`]].map(([k, l]) => (
+          {[["home", "Overview"], ["create", "+ Assign homework"], ["students", "+ Add student"], ["manage", `Manage (${students.length})`], ["subs", `Submissions (${submissions.length})`]].map(([k, l]) => (
             <button key={k} onClick={() => setView(k)} style={{ padding: "10px 16px", borderRadius: 10, border: `1px solid ${view === k ? C.gold : C.line}`, cursor: "pointer", fontWeight: 700, fontSize: 14, background: view === k ? "rgba(230,180,60,.12)" : "transparent", color: view === k ? C.gold : C.ash }}>{l}</button>
           ))}
         </div>
         {view === "home" && <TeacherHome students={students} homework={homework} submissions={submissions} go={setView} />}
         {view === "create" && <CreateHomework homework={homework} onCreated={() => { setView("home"); refresh(); }} />}
         {view === "students" && <AddStudent students={students} onAdded={refresh} />}
+        {view === "manage" && <ManageStudents students={students} refresh={refresh} />}
         {view === "subs" && <SubmissionsReview students={students} homework={homework} submissions={submissions} refresh={refresh} />}
       </div>
     </>
@@ -462,6 +463,123 @@ function Stat({ label, value, tone = "gold" }) {
     <div style={{ fontFamily: "Georgia,serif", fontSize: 30, fontWeight: 700, color: col }}>{value}</div>
     <div style={{ color: C.ash, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: .6, marginTop: 4 }}>{label}</div>
   </Card>;
+}
+
+function ManageStudents({ students, refresh }) {
+  const [search, setSearch] = useState("");
+  const [groupFilter, setGroupFilter] = useState("all");
+  const [editId, setEditId] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [editGroup, setEditGroup] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [confirmDel, setConfirmDel] = useState(null);
+
+  const filtered = students.filter(s => {
+    const inGroup = groupFilter === "all" || s.group === groupFilter;
+    const q = search.trim().toLowerCase();
+    const match = !q || (s.name || "").toLowerCase().includes(q) || (s.username || "").toLowerCase().includes(q) || (s.group || "").toLowerCase().includes(q);
+    return inGroup && match;
+  });
+
+  // group the filtered list by group name
+  const byGroup = {};
+  filtered.forEach(s => { (byGroup[s.group] = byGroup[s.group] || []).push(s); });
+  const groupNames = Object.keys(byGroup).sort();
+
+  const startEdit = s => { setEditId(s.id); setEditName(s.name); setEditGroup(s.group); setMsg(null); };
+  const saveEdit = async (s) => {
+    setBusy(true);
+    const { error } = await supabase.from("students").update({ name: editName.trim(), group: editGroup }).eq("id", s.id);
+    setBusy(false);
+    if (error) { setMsg({ t: "err", m: error.message }); return; }
+    setEditId(null); refresh();
+  };
+  const resetPin = async (s) => {
+    setBusy(true);
+    const newPin = String(Math.floor(1000 + Math.random() * 9000));
+    const { error } = await supabase.from("students").update({ pin: newPin }).eq("id", s.id);
+    setBusy(false);
+    if (error) { setMsg({ t: "err", m: error.message }); return; }
+    setMsg({ t: "ok", m: `New password for ${s.name}: ${newPin}`, id: s.id, pin: newPin });
+    refresh();
+  };
+  const doDelete = async (s) => {
+    setBusy(true);
+    await supabase.from("submissions").delete().eq("student_id", s.id);
+    const { error } = await supabase.from("students").delete().eq("id", s.id);
+    setBusy(false); setConfirmDel(null);
+    if (error) { setMsg({ t: "err", m: error.message }); return; }
+    refresh();
+  };
+
+  return (
+    <div>
+      {/* search + filter */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
+        <input style={{ ...inputStyle, flex: 1, minWidth: 180 }} placeholder="Search name, username, or group…" value={search} onChange={e => setSearch(e.target.value)} />
+        <select style={{ ...inputStyle, maxWidth: 160 }} value={groupFilter} onChange={e => setGroupFilter(e.target.value)}>
+          <option value="all">All groups</option>
+          {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+        </select>
+      </div>
+
+      {msg && <div style={{ background: msg.t === "ok" ? C.greenBg : C.redBg, color: msg.t === "ok" ? C.green : C.red, padding: "10px 14px", borderRadius: 10, marginBottom: 14, fontSize: 14, fontWeight: 600 }}>{msg.m}</div>}
+
+      {filtered.length === 0 && <Card><div style={{ textAlign: "center", color: C.ash, padding: 24 }}>No students found.</div></Card>}
+
+      {groupNames.map(g => (
+        <div key={g} style={{ marginBottom: 22 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <h3 style={{ fontFamily: "Georgia,serif", fontSize: 18, margin: 0 }}>{g}</h3>
+            <Pill tone="ash">{byGroup[g].length} students</Pill>
+          </div>
+          <div style={{ display: "grid", gap: 10 }}>
+            {byGroup[g].map(s => (
+              <Card key={s.id}>
+                {editId === s.id ? (
+                  <div style={{ display: "grid", gap: 12 }}>
+                    <Field label="Name"><input style={inputStyle} value={editName} onChange={e => setEditName(e.target.value)} /></Field>
+                    <Field label="Move to group"><select style={inputStyle} value={editGroup} onChange={e => setEditGroup(e.target.value)}>{GROUPS.map(x => <option key={x} value={x}>{x}</option>)}</select></Field>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <Btn small disabled={busy} onClick={() => saveEdit(s)}>{busy ? "Saving…" : "Save"}</Btn>
+                      <Btn small kind="ghost" onClick={() => setEditId(null)}>Cancel</Btn>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                      <div>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: C.cream }}>{s.name}</div>
+                        <div style={{ color: C.ash, fontSize: 13, marginTop: 4, fontFamily: "monospace" }}>
+                          user: <span style={{ color: C.goldLt }}>{s.username || "—"}</span> &nbsp;·&nbsp; pass: <span style={{ color: C.goldLt }}>{s.pin}</span>
+                        </div>
+                      </div>
+                      <Pill>{s.group}</Pill>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+                      <Btn small kind="ghost" onClick={() => startEdit(s)}>Edit / move</Btn>
+                      <Btn small kind="ghost" onClick={() => resetPin(s)}>Reset password</Btn>
+                      <button onClick={() => setConfirmDel(s.id)} style={{ padding: "8px 14px", borderRadius: 12, border: `1px solid ${C.red}55`, background: "transparent", color: C.red, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Delete</button>
+                    </div>
+                    {confirmDel === s.id && (
+                      <div style={{ marginTop: 12, padding: 14, background: C.redBg, borderRadius: 10, border: `1px solid ${C.red}44` }}>
+                        <div style={{ color: C.cream, fontSize: 14, marginBottom: 10 }}>Delete <b>{s.name}</b> and all their submissions? This can't be undone.</div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button onClick={() => doDelete(s)} disabled={busy} style={{ padding: "8px 16px", borderRadius: 10, border: "none", background: C.red, color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{busy ? "Deleting…" : "Yes, delete"}</button>
+                          <Btn small kind="ghost" onClick={() => setConfirmDel(null)}>Keep</Btn>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </Card>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function AddStudent({ students, onAdded }) {
