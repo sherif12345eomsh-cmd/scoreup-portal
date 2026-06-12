@@ -21,12 +21,11 @@ const Logo = ({ size = 40 }) => (
         <stop offset="0" stopColor={C.goldDk} /><stop offset=".5" stopColor={C.gold} /><stop offset="1" stopColor={C.goldLt} />
       </linearGradient>
     </defs>
-    <rect x="15" y="15" width="70" height="70" rx="15" fill="#0A0A0A" stroke="url(#g)" strokeWidth="4.5" />
-    <path d="M57 72 L67 72 L67 44 L62 38 L57 44 Z" fill="url(#g)" />
-    <path d="M26 68 Q46 64 62 40" fill="none" stroke="url(#g)" strokeWidth="2" opacity=".45" strokeLinecap="round" />
-    <path d="M27 71 Q48 67 64 43" fill="none" stroke="url(#g)" strokeWidth="3" opacity=".6" strokeLinecap="round" />
-    <path d="M29 70 Q50 65 66 36" fill="none" stroke="url(#g)" strokeWidth="7.5" strokeLinecap="round" />
-    <path d="M58 26 L76 30 L66 45 Z" fill="url(#g)" />
+    <rect x="14" y="14" width="72" height="72" rx="16" fill="#0A0A0A" stroke="url(#g)" strokeWidth="4.5" />
+    <path d="M58 74 L70 74 L70 42 L64 34 L58 42 Z" fill="url(#g)" />
+    <path d="M24 70 Q46 66 64 38" fill="none" stroke="url(#g)" strokeWidth="3" opacity=".4" strokeLinecap="round" />
+    <path d="M26 72 Q50 66 66 34" fill="none" stroke="url(#g)" strokeWidth="9" strokeLinecap="round" />
+    <path d="M56 24 L80 30 L68 48 Z" fill="url(#g)" />
   </svg>
 );
 
@@ -532,3 +531,4 @@ function SubmissionsReview({ students, homework, submissions, refresh }) {
     </>
   );
 }
+
