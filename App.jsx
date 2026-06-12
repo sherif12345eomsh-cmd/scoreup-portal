@@ -143,15 +143,15 @@ function TopBar({ subtitle, right, onExit }) {
 // ---------------- LOGIN ----------------
 function Login({ students, onLogin }) {
   const [tab, setTab] = useState("student");
-  const [studentId, setStudentId] = useState(students[0]?.id || "");
+  const [username, setUsername] = useState("");
   const [pin, setPin] = useState("");
   const [tpw, setTpw] = useState("");
   const [err, setErr] = useState("");
 
   const studentLogin = () => {
-    const s = students.find(x => x.id === studentId);
-    if (s && pin === s.pin) onLogin({ role: "student", studentId });
-    else setErr("Wrong PIN.");
+    const s = students.find(x => (x.username || "").toLowerCase() === username.trim().toLowerCase());
+    if (s && pin === s.pin) onLogin({ role: "student", studentId: s.id });
+    else setErr("Wrong username or password.");
   };
   const teacherLogin = async () => {
     const { data } = await supabase.from("staff").select("password").limit(1).single();
@@ -208,13 +208,13 @@ function Login({ students, onLogin }) {
 
           {tab === "student" ? (
             <>
-              <LuxField label="Select your name">
-                <select style={luxInput} value={studentId} onChange={e => { setStudentId(e.target.value); setErr(""); }}>
-                  {students.map(s => <option key={s.id} value={s.id}>{s.name} — {s.group}</option>)}
-                </select>
+              <LuxField label="Username">
+                <input style={luxInput} value={username} placeholder="Your username"
+                  autoCapitalize="none" autoCorrect="off"
+                  onChange={e => { setUsername(e.target.value); setErr(""); }} onKeyDown={e => e.key === "Enter" && studentLogin()} />
               </LuxField>
-              <LuxField label="Enter your PIN">
-                <input style={luxInput} value={pin} type="password" inputMode="numeric" placeholder="• • • •"
+              <LuxField label="Password">
+                <input style={luxInput} value={pin} type="password" placeholder="Your password"
                   onChange={e => { setPin(e.target.value); setErr(""); }} onKeyDown={e => e.key === "Enter" && studentLogin()} />
               </LuxField>
               <div style={{ marginTop: 22 }}><Btn full onClick={studentLogin}>Enter my homework  →</Btn></div>
@@ -302,35 +302,51 @@ function DoHomework({ hw, me, existing, onBack, onDone }) {
   const [answers, setAnswers] = useState(existing?.answers || qs.map(() => ""));
   const [photo, setPhoto] = useState(null);
   const [photoUrl, setPhotoUrl] = useState(existing?.photo_url || null);
+  const [answerFile, setAnswerFile] = useState(null);
+  const [answerFileName, setAnswerFileName] = useState(existing?.file_name || null);
   const [note, setNote] = useState(existing?.note || "");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const fileRef = useRef();
 
-  const canSubmit = hw.mode === "quiz" ? answers.every(a => (a || "").trim() !== "") : (!!photo || !!photoUrl);
+  const canSubmit = hw.mode === "quiz" ? answers.every(a => (a || "").trim() !== "")
+    : hw.mode === "file" ? (!!answerFile || !!answerFileName)
+    : (!!photo || !!photoUrl);
 
-  const onFile = e => {
+  const onPhoto = e => {
     const file = e.target.files[0]; if (!file) return;
     setPhoto(file);
     const r = new FileReader(); r.onload = () => setPhotoUrl(r.result); r.readAsDataURL(file);
+  };
+  const onAnswerFile = e => {
+    const file = e.target.files[0]; if (!file) return;
+    setAnswerFile(file); setAnswerFileName(file.name);
   };
 
   const submit = async () => {
     setSaving(true); setErr("");
     let finalPhotoUrl = existing?.photo_url || null;
+    let finalFileName = existing?.file_name || null;
     try {
-      if (photo) {
+      if (hw.mode === "upload" && photo) {
         const path = `${me.id}/${hw.id}_${Date.now()}_${photo.name}`;
         const up = await supabase.storage.from("submissions").upload(path, photo, { upsert: true });
         if (up.error) throw up.error;
         finalPhotoUrl = supabase.storage.from("submissions").getPublicUrl(path).data.publicUrl;
+      }
+      if (hw.mode === "file" && answerFile) {
+        const path = `${me.id}/${hw.id}_answer_${Date.now()}_${answerFile.name}`;
+        const up = await supabase.storage.from("submissions").upload(path, answerFile, { upsert: true });
+        if (up.error) throw up.error;
+        finalPhotoUrl = supabase.storage.from("submissions").getPublicUrl(path).data.publicUrl;
+        finalFileName = answerFile.name;
       }
       let score = null;
       if (hw.mode === "quiz" && qs.length) {
         let c = 0; qs.forEach((q, i) => { if ((answers[i] || "").trim().toLowerCase() === String(q.a).trim().toLowerCase()) c++; });
         score = c / qs.length;
       }
-      const row = { student_id: me.id, hw_id: hw.id, group: me.group, answers: hw.mode === "quiz" ? answers : null, photo_url: finalPhotoUrl, note, score, submitted_at: new Date().toISOString() };
+      const row = { student_id: me.id, hw_id: hw.id, group: me.group, answers: hw.mode === "quiz" ? answers : null, photo_url: finalPhotoUrl, file_name: finalFileName, note, score, submitted_at: new Date().toISOString() };
       const { error } = await supabase.from("submissions").upsert(row, { onConflict: "student_id,hw_id" });
       if (error) throw error;
       onDone();
@@ -351,6 +367,16 @@ function DoHomework({ hw, me, existing, onBack, onDone }) {
         </Card>
         {existing && <div style={{ marginBottom: 18 }}><Pill tone="green">Already submitted — you can resubmit to update</Pill></div>}
 
+        {hw.mode === "file" && hw.file_url && (
+          <Card style={{ marginBottom: 16 }}>
+            <div style={{ color: C.goldLt, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: .6, marginBottom: 10 }}>Step 1 — Download the homework</div>
+            <a href={hw.file_url} target="_blank" rel="noopener noreferrer" download
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", background: "#0E0E0E", border: `1px solid ${C.gold}55`, borderRadius: 12, textDecoration: "none", color: C.gold, fontWeight: 700 }}>
+              ⬇️ <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hw.file_name || "Download file"}</span>
+            </a>
+          </Card>
+        )}
+
         {hw.mode === "quiz" ? (
           <div style={{ display: "grid", gap: 14 }}>
             {qs.map((q, i) => (
@@ -364,10 +390,25 @@ function DoHomework({ hw, me, existing, onBack, onDone }) {
               </Card>
             ))}
           </div>
+        ) : hw.mode === "file" ? (
+          <Card>
+            <div style={{ color: C.goldLt, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: .6, marginBottom: 10 }}>Step 2 — Upload your answer file</div>
+            <input ref={fileRef} type="file" onChange={onAnswerFile} style={{ display: "none" }} />
+            {!answerFileName ? (
+              <button onClick={() => fileRef.current.click()} style={{ width: "100%", padding: "40px 20px", border: `2px dashed ${C.line}`, borderRadius: 14, background: "#0E0E0E", color: C.ash, cursor: "pointer", fontSize: 15 }}>
+                <div style={{ fontSize: 34, marginBottom: 8 }}>📎</div>Tap to choose your answer file
+              </button>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px", background: "#0E0E0E", border: `1px solid ${C.gold}55`, borderRadius: 12 }}>
+                <span style={{ color: C.cream, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📎 {answerFileName}</span>
+                <button onClick={() => fileRef.current.click()} style={{ background: "none", border: "none", color: C.gold, cursor: "pointer", fontSize: 13, fontWeight: 700, flexShrink: 0, marginLeft: 10 }}>Change</button>
+              </div>
+            )}
+          </Card>
         ) : (
           <Card>
             <div style={{ color: C.goldLt, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: .6, marginBottom: 10 }}>Upload your work</div>
-            <input ref={fileRef} type="file" accept="image/*" onChange={onFile} style={{ display: "none" }} />
+            <input ref={fileRef} type="file" accept="image/*" onChange={onPhoto} style={{ display: "none" }} />
             {!photoUrl ? (
               <button onClick={() => fileRef.current.click()} style={{ width: "100%", padding: "40px 20px", border: `2px dashed ${C.line}`, borderRadius: 14, background: C.coal, color: C.ash, cursor: "pointer", fontSize: 15 }}>
                 <div style={{ fontSize: 34, marginBottom: 8 }}>📸</div>Tap to take or choose a photo
@@ -388,7 +429,7 @@ function DoHomework({ hw, me, existing, onBack, onDone }) {
         </div>
         {err && <div style={{ color: C.red, fontSize: 13, marginBottom: 12 }}>{err}</div>}
         <Btn full disabled={!canSubmit || saving} onClick={submit}>{saving ? "Submitting…" : existing ? "Update my submission" : "Submit homework"}</Btn>
-        {!canSubmit && <div style={{ color: C.ash, fontSize: 12, textAlign: "center", marginTop: 10 }}>{hw.mode === "quiz" ? "Answer every question to submit." : "Add a photo to submit."}</div>}
+        {!canSubmit && <div style={{ color: C.ash, fontSize: 12, textAlign: "center", marginTop: 10 }}>{hw.mode === "quiz" ? "Answer every question to submit." : hw.mode === "file" ? "Attach your answer file to submit." : "Add a photo to submit."}</div>}
       </div>
     </>
   );
@@ -402,12 +443,13 @@ function Teacher({ students, homework, submissions, onExit, refresh }) {
       <TopBar subtitle="Teacher dashboard" onExit={onExit} right={<Pill>{homework.length} assignments</Pill>} />
       <div style={{ maxWidth: 860, margin: "0 auto", padding: "24px 16px 60px" }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 22, flexWrap: "wrap" }}>
-          {[["home", "Overview"], ["create", "+ Assign homework"], ["subs", `Submissions (${submissions.length})`]].map(([k, l]) => (
+          {[["home", "Overview"], ["create", "+ Assign homework"], ["students", "+ Add student"], ["subs", `Submissions (${submissions.length})`]].map(([k, l]) => (
             <button key={k} onClick={() => setView(k)} style={{ padding: "10px 16px", borderRadius: 10, border: `1px solid ${view === k ? C.gold : C.line}`, cursor: "pointer", fontWeight: 700, fontSize: 14, background: view === k ? "rgba(230,180,60,.12)" : "transparent", color: view === k ? C.gold : C.ash }}>{l}</button>
           ))}
         </div>
         {view === "home" && <TeacherHome students={students} homework={homework} submissions={submissions} go={setView} />}
         {view === "create" && <CreateHomework homework={homework} onCreated={() => { setView("home"); refresh(); }} />}
+        {view === "students" && <AddStudent students={students} onAdded={refresh} />}
         {view === "subs" && <SubmissionsReview students={students} homework={homework} submissions={submissions} refresh={refresh} />}
       </div>
     </>
@@ -420,6 +462,103 @@ function Stat({ label, value, tone = "gold" }) {
     <div style={{ fontFamily: "Georgia,serif", fontSize: 30, fontWeight: 700, color: col }}>{value}</div>
     <div style={{ color: C.ash, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: .6, marginTop: 4 }}>{label}</div>
   </Card>;
+}
+
+function AddStudent({ students, onAdded }) {
+  const [name, setName] = useState("");
+  const [group, setGroup] = useState(GROUPS[0]);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const [created, setCreated] = useState(null);
+
+  // build a unique username from name + group, e.g. "ahmed.sat1.27"
+  const makeUsername = (nm, grp) => {
+    const base = (nm.trim().toLowerCase().split(/\s+/)[0] || "student").replace(/[^a-z0-9]/g, "");
+    const g = grp.toLowerCase().replace(/[^a-z0-9]/g, "");
+    let u;
+    do { u = `${base}.${g}.${Math.floor(100 + Math.random() * 900)}`; }
+    while (students.some(s => (s.username || "").toLowerCase() === u));
+    return u;
+  };
+  const makePin = () => String(Math.floor(1000 + Math.random() * 9000));
+  const nextId = () => {
+    const nums = students.map(s => parseInt(String(s.id).replace(/\D/g, ""), 10)).filter(n => !isNaN(n));
+    const max = nums.length ? Math.max(...nums) : 0;
+    return "st" + String(max + 1).padStart(3, "0");
+  };
+
+  const save = async () => {
+    if (!name.trim()) { setErr("Enter the student's name."); return; }
+    setSaving(true); setErr("");
+    const username = makeUsername(name, group);
+    const pin = makePin();
+    const id = nextId();
+    const { error } = await supabase.from("students").insert({ id, name: name.trim(), group, username, pin });
+    if (error) { setErr(error.message); setSaving(false); return; }
+    setCreated({ name: name.trim(), group, username, pin });
+    setName(""); setSaving(false);
+    onAdded();
+  };
+
+  const printCard = () => {
+    if (!created) return;
+    const w = window.open("", "_blank");
+    w.document.write(`<html><head><title>ScoreUp Login — ${created.name}</title>
+      <style>
+        body{font-family:Georgia,serif;background:#0A0A0A;color:#F5EFE0;display:flex;justify-content:center;padding:40px;}
+        .card{width:420px;border:2px solid #E6B43C;border-radius:18px;padding:32px;background:linear-gradient(180deg,#161616,#0E0E0E);}
+        h1{color:#E6B43C;font-size:22px;margin:0 0 4px;letter-spacing:1px;}
+        .sub{color:#9A968C;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin-bottom:24px;}
+        .row{margin:14px 0;}
+        .lbl{color:#F5D67A;font-size:11px;text-transform:uppercase;letter-spacing:1px;}
+        .val{font-size:20px;font-weight:bold;color:#fff;font-family:monospace;margin-top:3px;}
+        .foot{margin-top:24px;border-top:1px solid #2A2A2A;padding-top:14px;color:#9A968C;font-size:12px;}
+      </style></head><body><div class="card">
+      <h1>SCOREUP ELITE ACADEMY</h1>
+      <div class="sub">Student Login Card</div>
+      <div class="row"><div class="lbl">Name</div><div class="val" style="font-family:Georgia">${created.name}</div></div>
+      <div class="row"><div class="lbl">Group</div><div class="val" style="font-family:Georgia">${created.group}</div></div>
+      <div class="row"><div class="lbl">Username</div><div class="val">${created.username}</div></div>
+      <div class="row"><div class="lbl">Password</div><div class="val">${created.pin}</div></div>
+      <div class="foot">Keep this private. Log in at the academy portal to access your homework.</div>
+      </div><script>window.onload=()=>window.print()</script></body></html>`);
+    w.document.close();
+  };
+
+  if (created) {
+    return (
+      <Card style={{ padding: 26 }}>
+        <div style={{ textAlign: "center", marginBottom: 18 }}>
+          <div style={{ fontSize: 30 }}>✅</div>
+          <h3 style={{ fontFamily: "Georgia,serif", fontSize: 20, margin: "8px 0 2px" }}>Student added</h3>
+          <div style={{ color: C.ash, fontSize: 13 }}>Give these login details to {created.name}</div>
+        </div>
+        <div style={{ background: "#0E0E0E", border: `1px solid ${C.gold}55`, borderRadius: 14, padding: 20, marginBottom: 18 }}>
+          {[["Name", created.name], ["Group", created.group], ["Username", created.username], ["Password", created.pin]].map(([k, v]) => (
+            <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: k === "Password" ? "none" : `1px solid ${C.line}` }}>
+              <span style={{ color: C.goldLt, fontSize: 11, textTransform: "uppercase", letterSpacing: "1px", fontWeight: 700 }}>{k}</span>
+              <span style={{ color: C.cream, fontSize: 16, fontWeight: 700, fontFamily: k === "Username" || k === "Password" ? "monospace" : "inherit" }}>{v}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "grid", gap: 10 }}>
+          <Btn full onClick={printCard}>🖨️  Download / print login card</Btn>
+          <Btn kind="ghost" full onClick={() => setCreated(null)}>+ Add another student</Btn>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card style={{ padding: 26 }}>
+      <h3 style={{ fontFamily: "Georgia,serif", fontSize: 20, marginBottom: 6 }}>Add a student</h3>
+      <p style={{ color: C.ash, fontSize: 13, marginBottom: 20 }}>Enter the name and group. The portal creates a unique username and password automatically.</p>
+      <Field label="Student name"><input style={inputStyle} value={name} placeholder="e.g. Ahmed Al Mansoori" onChange={e => { setName(e.target.value); setErr(""); }} /></Field>
+      <Field label="Group"><select style={inputStyle} value={group} onChange={e => setGroup(e.target.value)}>{GROUPS.map(g => <option key={g} value={g}>{g}</option>)}</select></Field>
+      {err && <div style={{ color: C.red, fontSize: 13, marginBottom: 12 }}>{err}</div>}
+      <div style={{ marginTop: 8 }}><Btn full disabled={saving} onClick={save}>{saving ? "Creating…" : "Create login for this student"}</Btn></div>
+    </Card>
+  );
 }
 
 function TeacherHome({ students, homework, submissions, go }) {
@@ -468,16 +607,30 @@ function CreateHomework({ homework, onCreated }) {
     due: new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10), mode: "quiz", instructions: "",
   });
   const [qs, setQs] = useState([{ q: "", a: "" }]);
+  const [hwFile, setHwFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  const fileRef = useRef();
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
-  const valid = f.title.trim() && f.instructions.trim() && (f.mode === "upload" || qs.every(q => q.q.trim()));
+  const valid = f.title.trim() && f.instructions.trim() &&
+    (f.mode === "quiz" ? qs.every(q => q.q.trim()) : f.mode === "file" ? !!hwFile : true);
 
   const save = async () => {
     setSaving(true); setErr("");
-    const row = { ...f, questions: f.mode === "quiz" ? qs.filter(q => q.q.trim()) : [] };
-    const { error } = await supabase.from("homework").insert(row);
-    if (error) { setErr(error.message); setSaving(false); } else onCreated();
+    try {
+      let file_url = null, file_name = null;
+      if (f.mode === "file" && hwFile) {
+        const path = `homework/${f.id}_${Date.now()}_${hwFile.name}`;
+        const up = await supabase.storage.from("submissions").upload(path, hwFile, { upsert: true });
+        if (up.error) throw up.error;
+        file_url = supabase.storage.from("submissions").getPublicUrl(path).data.publicUrl;
+        file_name = hwFile.name;
+      }
+      const row = { ...f, questions: f.mode === "quiz" ? qs.filter(q => q.q.trim()) : [], file_url, file_name };
+      const { error } = await supabase.from("homework").insert(row);
+      if (error) throw error;
+      onCreated();
+    } catch (e) { setErr(e.message || "Could not assign. Try again."); setSaving(false); }
   };
 
   return (
@@ -495,9 +648,24 @@ function CreateHomework({ homework, onCreated }) {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         <Field label="Due date"><input style={inputStyle} type="date" value={f.due} onChange={e => set("due", e.target.value)} /></Field>
-        <Field label="Submission type"><select style={inputStyle} value={f.mode} onChange={e => set("mode", e.target.value)}><option value="quiz">Typed answers (quiz)</option><option value="upload">Photo upload</option></select></Field>
+        <Field label="Submission type"><select style={inputStyle} value={f.mode} onChange={e => set("mode", e.target.value)}><option value="quiz">Typed answers (quiz)</option><option value="upload">Photo upload</option><option value="file">File (download & upload back)</option></select></Field>
       </div>
       <Field label="Instructions"><textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} value={f.instructions} placeholder="What should students do?" onChange={e => set("instructions", e.target.value)} /></Field>
+      {f.mode === "file" && (
+        <Field label="Homework file (students download this)">
+          <input ref={fileRef} type="file" onChange={e => setHwFile(e.target.files[0] || null)} style={{ display: "none" }} />
+          {!hwFile ? (
+            <button onClick={() => fileRef.current.click()} style={{ width: "100%", padding: "22px", border: `2px dashed ${C.line}`, borderRadius: 12, background: "#0E0E0E", color: C.ash, cursor: "pointer", fontSize: 14 }}>
+              📎 Tap to attach the homework file
+            </button>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "#0E0E0E", border: `1px solid ${C.gold}55`, borderRadius: 12 }}>
+              <span style={{ color: C.cream, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📎 {hwFile.name}</span>
+              <button onClick={() => fileRef.current.click()} style={{ background: "none", border: "none", color: C.gold, cursor: "pointer", fontSize: 13, fontWeight: 700, flexShrink: 0, marginLeft: 10 }}>Change</button>
+            </div>
+          )}
+        </Field>
+      )}
       {f.mode === "quiz" && (
         <div style={{ marginTop: 6 }}>
           <div style={{ color: C.ash, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: .6, marginBottom: 10 }}>Questions <span style={{ color: C.goldDk }}>(answer key auto-grades)</span></div>
@@ -559,7 +727,14 @@ function SubmissionsReview({ students, homework, submissions, refresh }) {
                   })}
                 </div>
               )}
-              {s.photo_url && <img src={s.photo_url} alt="work" style={{ width: "100%", maxHeight: 320, objectFit: "contain", borderRadius: 10, border: `1px solid ${C.line}`, background: C.black, marginBottom: 10 }} />}
+              {s.photo_url && (s.file_name && !/\.(png|jpe?g|gif|webp|heic)$/i.test(s.file_name) ? (
+                <a href={s.photo_url} target="_blank" rel="noopener noreferrer" download
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "#0E0E0E", border: `1px solid ${C.gold}55`, borderRadius: 10, textDecoration: "none", color: C.gold, fontWeight: 700, marginBottom: 10 }}>
+                  ⬇️ <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.file_name}</span>
+                </a>
+              ) : (
+                <img src={s.photo_url} alt="work" style={{ width: "100%", maxHeight: 320, objectFit: "contain", borderRadius: 10, border: `1px solid ${C.line}`, background: C.black, marginBottom: 10 }} />
+              ))}
               {s.note && <div style={{ color: C.ash, fontSize: 13, fontStyle: "italic", marginBottom: 10 }}>Note: "{s.note}"</div>}
               <div style={{ display: "flex", gap: 8, alignItems: "center", paddingTop: 10, borderTop: `1px solid ${C.line}`, flexWrap: "wrap" }}>
                 <span style={{ color: C.ash, fontSize: 13, fontWeight: 700 }}>Score:</span>
