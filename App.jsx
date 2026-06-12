@@ -262,6 +262,31 @@ function Student({ me, homework, submissions, onExit, refresh }) {
       <div style={{ maxWidth: 720, margin: "0 auto", padding: "24px 16px 60px" }}>
         <h2 style={{ fontFamily: "Georgia,serif", fontSize: 24, marginBottom: 4 }}>Your homework</h2>
         <p style={{ color: C.ash, marginBottom: 20, fontSize: 14 }}>Tap any assignment to open and submit it.</p>
+
+        {myHw.length > 0 && (() => {
+          const mySubs = myHw.map(h => subFor(h.id)).filter(Boolean);
+          const completion = myHw.length ? Math.round((mySubs.length / myHw.length) * 100) : 0;
+          const myGraded = mySubs.filter(s => s.score != null);
+          const myAvg = myGraded.length ? Math.round(myGraded.reduce((n, s) => n + s.score, 0) / myGraded.length * 100) : 0;
+          const scoreBars = myHw.filter(h => { const s = subFor(h.id); return s && s.score != null; })
+            .map(h => ({ label: h.id.replace("HW-", "#"), value: Math.round(subFor(h.id).score * 100) }));
+          return (
+            <Card style={{ marginBottom: 20 }}>
+              <div style={{ color: C.goldLt, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: .6, marginBottom: 14 }}>My progress</div>
+              <div style={{ display: "flex", justifyContent: "space-around", flexWrap: "wrap", gap: 16, marginBottom: scoreBars.length ? 18 : 0 }}>
+                <Donut pct={completion} label="Completed" sub={`${mySubs.length} of ${myHw.length}`} />
+                <Donut pct={myAvg} label="Average score" sub={myGraded.length ? `${myGraded.length} graded` : "none graded yet"} />
+              </div>
+              {scoreBars.length > 0 && (
+                <div>
+                  <div style={{ color: C.ash, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: .6, marginBottom: 4 }}>Scores by assignment</div>
+                  <BarChart data={scoreBars} max={100} unit="%" height={140} />
+                </div>
+              )}
+            </Card>
+          );
+        })()}
+
         {myHw.length === 0 && <Card><div style={{ color: C.ash, textAlign: "center", padding: 20 }}>Nothing assigned yet.</div></Card>}
         <div style={{ display: "grid", gap: 14 }}>
           {myHw.map(h => {
@@ -445,15 +470,17 @@ function Teacher({ students, homework, submissions, onExit, refresh }) {
       <TopBar subtitle="Teacher dashboard" onExit={onExit} right={<Pill>{homework.length} assignments</Pill>} />
       <div style={{ maxWidth: 860, margin: "0 auto", padding: "24px 16px 60px" }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 22, flexWrap: "wrap" }}>
-          {[["home", "Overview"], ["create", "+ Assign homework"], ["students", "+ Add student"], ["manage", `Manage (${students.length})`], ["subs", `Submissions (${submissions.length})`]].map(([k, l]) => (
+          {[["home", "Overview"], ["create", "+ Assign homework"], ["assignments", `Assignments (${homework.length})`], ["students", "+ Add student"], ["manage", `Students (${students.length})`], ["subs", `Submissions (${submissions.length})`], ["charts", "📊 Charts"]].map(([k, l]) => (
             <button key={k} onClick={() => setView(k)} style={{ padding: "10px 16px", borderRadius: 10, border: `1px solid ${view === k ? C.gold : C.line}`, cursor: "pointer", fontWeight: 700, fontSize: 14, background: view === k ? "rgba(230,180,60,.12)" : "transparent", color: view === k ? C.gold : C.ash }}>{l}</button>
           ))}
         </div>
         {view === "home" && <TeacherHome students={students} homework={homework} submissions={submissions} go={setView} />}
         {view === "create" && <CreateHomework homework={homework} onCreated={() => { setView("home"); refresh(); }} />}
+        {view === "assignments" && <ManageAssignments homework={homework} students={students} submissions={submissions} refresh={refresh} />}
         {view === "students" && <AddStudent students={students} onAdded={refresh} />}
         {view === "manage" && <ManageStudents students={students} refresh={refresh} />}
         {view === "subs" && <SubmissionsReview students={students} homework={homework} submissions={submissions} refresh={refresh} />}
+        {view === "charts" && <TeacherCharts students={students} homework={homework} submissions={submissions} />}
       </div>
     </>
   );
@@ -678,6 +705,176 @@ function AddStudent({ students, onAdded }) {
       {err && <div style={{ color: C.red, fontSize: 13, marginBottom: 12 }}>{err}</div>}
       <div style={{ marginTop: 8 }}><Btn full disabled={saving} onClick={save}>{saving ? "Creating…" : "Create login for this student"}</Btn></div>
     </Card>
+  );
+}
+
+// ---------- lightweight inline charts (no libraries) ----------
+function BarChart({ data, max, unit = "", height = 160 }) {
+  const peak = max || Math.max(1, ...data.map(d => d.value));
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height, paddingTop: 10 }}>
+      {data.map((d, i) => {
+        const h = Math.round((d.value / peak) * (height - 34));
+        return (
+          <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, minWidth: 0 }}>
+            <div style={{ color: C.goldLt, fontSize: 11, fontWeight: 700 }}>{d.value}{unit}</div>
+            <div style={{ width: "100%", maxWidth: 40, height: Math.max(h, 3), borderRadius: "6px 6px 0 0", background: `linear-gradient(180deg, ${C.goldLt}, ${C.gold} 60%, ${C.goldDk})` }} />
+            <div style={{ color: C.ash, fontSize: 10, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", width: "100%" }}>{d.label}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+function Donut({ pct, label, sub }) {
+  const r = 46, circ = 2 * Math.PI * r, off = circ - (pct / 100) * circ;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+      <svg width="120" height="120" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r={r} fill="none" stroke={C.line} strokeWidth="11" />
+        <circle cx="60" cy="60" r={r} fill="none" stroke={C.gold} strokeWidth="11" strokeLinecap="round"
+          strokeDasharray={circ} strokeDashoffset={off} transform="rotate(-90 60 60)" />
+        <text x="60" y="60" textAnchor="middle" dominantBaseline="central" fill={C.cream} fontSize="24" fontWeight="700" fontFamily="Georgia,serif">{pct}%</text>
+      </svg>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ color: C.cream, fontWeight: 700, fontSize: 14 }}>{label}</div>
+        {sub && <div style={{ color: C.ash, fontSize: 12 }}>{sub}</div>}
+      </div>
+    </div>
+  );
+}
+
+function ManageAssignments({ homework, students, submissions, refresh }) {
+  const [editId, setEditId] = useState(null);
+  const [ef, setEf] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [confirmDel, setConfirmDel] = useState(null);
+  const [showWho, setShowWho] = useState(null);
+
+  const startEdit = h => { setEditId(h.id); setEf({ title: h.title, group: h.group, subject: h.subject, difficulty: h.difficulty, due: h.due, instructions: h.instructions }); setMsg(null); };
+  const saveEdit = async (h) => {
+    setBusy(true);
+    const { error } = await supabase.from("homework").update(ef).eq("id", h.id);
+    setBusy(false);
+    if (error) { setMsg({ t: "err", m: error.message }); return; }
+    setEditId(null); refresh();
+  };
+  const doDelete = async (h) => {
+    setBusy(true);
+    await supabase.from("submissions").delete().eq("hw_id", h.id);
+    const { error } = await supabase.from("homework").delete().eq("id", h.id);
+    setBusy(false); setConfirmDel(null);
+    if (error) { setMsg({ t: "err", m: error.message }); return; }
+    refresh();
+  };
+
+  if (!homework.length) return <Card><div style={{ textAlign: "center", color: C.ash, padding: 30 }}>No assignments yet. Use "+ Assign homework" to create one.</div></Card>;
+
+  return (
+    <div>
+      {msg && <div style={{ background: C.redBg, color: C.red, padding: "10px 14px", borderRadius: 10, marginBottom: 14, fontSize: 14 }}>{msg.m}</div>}
+      <div style={{ display: "grid", gap: 12 }}>
+        {homework.map(h => {
+          const groupStudents = students.filter(s => s.group === h.group);
+          const subbed = submissions.filter(s => s.hw_id === h.id);
+          const missing = groupStudents.filter(s => !subbed.find(x => x.student_id === s.id));
+          return (
+            <Card key={h.id}>
+              {editId === h.id ? (
+                <div style={{ display: "grid", gap: 12 }}>
+                  <Field label="Title"><input style={inputStyle} value={ef.title} onChange={e => setEf({ ...ef, title: e.target.value })} /></Field>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <Field label="Group"><select style={inputStyle} value={ef.group} onChange={e => setEf({ ...ef, group: e.target.value })}>{GROUPS.map(g => <option key={g} value={g}>{g}</option>)}</select></Field>
+                    <Field label="Difficulty"><select style={inputStyle} value={ef.difficulty} onChange={e => setEf({ ...ef, difficulty: e.target.value })}><option>Easy</option><option>Medium</option><option>Hard</option></select></Field>
+                  </div>
+                  <Field label="Due date"><input style={inputStyle} type="date" value={ef.due} onChange={e => setEf({ ...ef, due: e.target.value })} /></Field>
+                  <Field label="Instructions"><textarea style={{ ...inputStyle, minHeight: 60 }} value={ef.instructions} onChange={e => setEf({ ...ef, instructions: e.target.value })} /></Field>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Btn small disabled={busy} onClick={() => saveEdit(h)}>{busy ? "Saving…" : "Save changes"}</Btn>
+                    <Btn small kind="ghost" onClick={() => setEditId(null)}>Cancel</Btn>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+                    <Pill tone="ash">{h.id}</Pill><Pill>{h.group}</Pill>
+                    <span style={{ fontWeight: 700, fontSize: 16 }}>{h.title}</span>
+                    <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                      <Pill tone="green">{subbed.length} in</Pill>
+                      {missing.length ? <Pill tone="red">{missing.length} missing</Pill> : <Pill tone="green">All in ✓</Pill>}
+                    </span>
+                  </div>
+                  <div style={{ color: C.ash, fontSize: 13, marginBottom: 12 }}>{h.subject} · {h.difficulty} · due {fmtDate(h.due)} · {h.mode === "quiz" ? "quiz" : h.mode === "file" ? "file" : "photo"}</div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Btn small kind="ghost" onClick={() => setShowWho(showWho === h.id ? null : h.id)}>{showWho === h.id ? "Hide" : "See who submitted"}</Btn>
+                    <Btn small kind="ghost" onClick={() => startEdit(h)}>Edit</Btn>
+                    <button onClick={() => setConfirmDel(h.id)} style={{ padding: "8px 14px", borderRadius: 12, border: `1px solid ${C.red}55`, background: "transparent", color: C.red, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Delete</button>
+                  </div>
+                  {showWho === h.id && (
+                    <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.line}`, display: "grid", gap: 6 }}>
+                      <div style={{ color: C.green, fontSize: 13, fontWeight: 700 }}>Submitted ({subbed.length}):</div>
+                      <div style={{ color: C.cream, fontSize: 13 }}>{subbed.length ? subbed.map(s => students.find(x => x.id === s.student_id)?.name || s.student_id).join(", ") : "—"}</div>
+                      <div style={{ color: C.red, fontSize: 13, fontWeight: 700, marginTop: 6 }}>Missing ({missing.length}):</div>
+                      <div style={{ color: C.ash, fontSize: 13 }}>{missing.length ? missing.map(m => m.name).join(", ") : "Everyone submitted ✓"}</div>
+                    </div>
+                  )}
+                  {confirmDel === h.id && (
+                    <div style={{ marginTop: 12, padding: 14, background: C.redBg, borderRadius: 10, border: `1px solid ${C.red}44` }}>
+                      <div style={{ color: C.cream, fontSize: 14, marginBottom: 10 }}>Delete <b>{h.title}</b> and all its submissions? This can't be undone.</div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button onClick={() => doDelete(h)} disabled={busy} style={{ padding: "8px 16px", borderRadius: 10, border: "none", background: C.red, color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{busy ? "Deleting…" : "Yes, delete"}</button>
+                        <Btn small kind="ghost" onClick={() => setConfirmDel(null)}>Keep</Btn>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TeacherCharts({ students, homework, submissions }) {
+  // overall completion
+  const expected = homework.reduce((n, h) => n + students.filter(s => s.group === h.group).length, 0);
+  const rate = expected ? Math.round((submissions.length / expected) * 100) : 0;
+  const graded = submissions.filter(s => s.score != null);
+  const avg = graded.length ? Math.round(graded.reduce((n, s) => n + s.score, 0) / graded.length * 100) : 0;
+
+  // submission rate per group
+  const groupData = GROUPS.map(g => {
+    const gExpected = homework.filter(h => h.group === g).length * students.filter(s => s.group === g).length;
+    const gSub = submissions.filter(s => s.group === g).length;
+    return { label: g, value: gExpected ? Math.round((gSub / gExpected) * 100) : 0 };
+  }).filter(d => students.some(s => s.group === d.label)); // only groups with students
+
+  // average score per group (graded only)
+  const scoreData = GROUPS.map(g => {
+    const gs = graded.filter(s => s.group === g);
+    return { label: g, value: gs.length ? Math.round(gs.reduce((n, s) => n + s.score, 0) / gs.length * 100) : 0 };
+  }).filter(d => students.some(s => s.group === d.label));
+
+  return (
+    <div style={{ display: "grid", gap: 18 }}>
+      <Card>
+        <div style={{ display: "flex", justifyContent: "space-around", flexWrap: "wrap", gap: 16 }}>
+          <Donut pct={rate} label="Submission rate" sub={`${submissions.length} of ${expected}`} />
+          <Donut pct={avg} label="Average score" sub={`${graded.length} graded`} />
+        </div>
+      </Card>
+      <Card>
+        <div style={{ color: C.goldLt, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: .6, marginBottom: 6 }}>Submission rate by group</div>
+        {groupData.length ? <BarChart data={groupData} max={100} unit="%" /> : <div style={{ color: C.ash, padding: 20, textAlign: "center" }}>No data yet</div>}
+      </Card>
+      <Card>
+        <div style={{ color: C.goldLt, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: .6, marginBottom: 6 }}>Average score by group</div>
+        {scoreData.some(d => d.value > 0) ? <BarChart data={scoreData} max={100} unit="%" /> : <div style={{ color: C.ash, padding: 20, textAlign: "center" }}>No graded work yet</div>}
+      </Card>
+    </div>
   );
 }
 
