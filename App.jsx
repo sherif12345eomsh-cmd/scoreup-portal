@@ -982,13 +982,25 @@ function CreateHomework({ homework, students, onCreated, type = "homework" }) {
       // ensure a unique id even if the typed one already exists
       let id = f.id;
       if (homework.some(h => h.id === id)) id = id + "-" + Date.now().toString().slice(-4);
-      const row = { ...f, id, type, assigned_to: target === "individuals" ? picked : null, questions: f.mode === "quiz" ? qs.filter(q => q.q.trim()) : [], file_url, file_name };
-      const { error } = await supabase.from("homework").insert(row);
-      if (error) {
-        if (/column .* does not exist|file_url|file_name|assigned_to|type/i.test(error.message))
-          throw new Error("The database is missing some columns. Run add_exams_and_targeting.sql (and add_file_homework.sql) in Supabase, then try again.");
-        throw error;
+      // Build the row explicitly from real columns only (avoids "column does not exist" failures)
+      const row = {
+        id, title: f.title.trim(), group: f.group, subject: f.subject,
+        skill: f.skill, difficulty: f.difficulty, due: f.due, mode: f.mode,
+        instructions: f.instructions.trim(),
+        questions: f.mode === "quiz" ? qs.filter(q => q.q.trim()) : [],
+        file_url, file_name, type, assigned_to: target === "individuals" ? picked : null,
+      };
+      let { error } = await supabase.from("homework").insert(row);
+      // If a column is missing, retry without the newer optional columns so it still saves
+      if (error && /column .* does not exist|skill|file_url|file_name|assigned_to|type/i.test(error.message)) {
+        const { skill, file_url: fu, file_name: fn, type: ty, assigned_to: at, ...core } = row;
+        const retry = await supabase.from("homework").insert(core);
+        error = retry.error;
+        if (!error) {
+          setErr("Saved — but your database is missing some columns. Run add_exams_and_targeting.sql and add_file_homework.sql in Supabase so files and exams work fully.");
+        }
       }
+      if (error) throw error;
       onCreated();
     } catch (e) { setErr(e.message || "Could not assign. Try again."); setSaving(false); }
   };
