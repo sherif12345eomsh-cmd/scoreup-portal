@@ -68,6 +68,13 @@ const fmtDate = d => new Date(d + "T00:00:00").toLocaleDateString("en-GB", { day
 const daysLeft = d => Math.ceil((new Date(d + "T00:00:00") - new Date()) / 86400000);
 const dueTone = d => { const n = daysLeft(d); return n < 0 ? "red" : n <= 1 ? "amber" : "green"; };
 const dueLabel = d => { const n = daysLeft(d); return n < 0 ? `${-n}d overdue` : n === 0 ? "Due today" : n === 1 ? "Due tomorrow" : `${n} days left`; };
+// The students an assignment actually targets: specific individuals if set, else the whole group.
+const targetStudents = (h, students) => {
+  const inGroup = students.filter(s => s.group === h.group);
+  if (h.assigned_to && Array.isArray(h.assigned_to) && h.assigned_to.length > 0)
+    return inGroup.filter(s => h.assigned_to.includes(s.id));
+  return inGroup;
+};
 
 // ============================================================
 export default function App() {
@@ -246,9 +253,16 @@ const LuxField = Field;
 // ---------------- STUDENT ----------------
 function Student({ me, homework, submissions, onExit, refresh }) {
   const [openId, setOpenId] = useState(null);
-  const myHw = homework.filter(h => h.group === me.group);
+  const [tab, setTab] = useState("homework");
+  // A student sees an item if: same group AND (assigned to whole group OR they're individually assigned)
+  const visibleToMe = h => h.group === me.group &&
+    (!h.assigned_to || !Array.isArray(h.assigned_to) || h.assigned_to.length === 0 || h.assigned_to.includes(me.id));
+  const allMine = homework.filter(visibleToMe);
+  const myHw = allMine.filter(h => (h.type || "homework") !== "exam");
+  const myExams = allMine.filter(h => (h.type || "homework") === "exam");
+  const list = tab === "exams" ? myExams : myHw;
   const subFor = id => submissions.find(s => s.student_id === me.id && s.hw_id === id);
-  const done = myHw.filter(h => subFor(h.id)).length;
+  const done = list.filter(h => subFor(h.id)).length;
 
   if (openId) {
     const hw = homework.find(h => h.id === openId);
@@ -258,23 +272,30 @@ function Student({ me, homework, submissions, onExit, refresh }) {
 
   return (
     <>
-      <TopBar subtitle={`${me.name} · ${me.group}`} onExit={onExit} right={<Pill>{done}/{myHw.length} done</Pill>} />
+      <TopBar subtitle={`${me.name} · ${me.group}`} onExit={onExit} right={<Pill>{done}/{list.length} done</Pill>} />
       <div style={{ maxWidth: 720, margin: "0 auto", padding: "24px 16px 60px" }}>
-        <h2 style={{ fontFamily: "Georgia,serif", fontSize: 24, marginBottom: 4 }}>Your homework</h2>
-        <p style={{ color: C.ash, marginBottom: 20, fontSize: 14 }}>Tap any assignment to open and submit it.</p>
+        {/* Homework / Exams toggle */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 18, background: "#0E0E0E", padding: 5, borderRadius: 12, border: `1px solid ${C.line}` }}>
+          {[["homework", `Homework (${myHw.length})`], ["exams", `Exams (${myExams.length})`]].map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)} style={{ flex: 1, padding: "10px 0", borderRadius: 9, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 14,
+              background: tab === k ? `linear-gradient(135deg, ${C.goldLt}, ${C.gold})` : "transparent", color: tab === k ? "#1a1300" : C.ash }}>{l}</button>
+          ))}
+        </div>
+        <h2 style={{ fontFamily: "Georgia,serif", fontSize: 24, marginBottom: 4 }}>{tab === "exams" ? "Your exams" : "Your homework"}</h2>
+        <p style={{ color: C.ash, marginBottom: 20, fontSize: 14 }}>Tap any {tab === "exams" ? "exam" : "assignment"} to open and submit it.</p>
 
-        {myHw.length > 0 && (() => {
-          const mySubs = myHw.map(h => subFor(h.id)).filter(Boolean);
-          const completion = myHw.length ? Math.round((mySubs.length / myHw.length) * 100) : 0;
+        {list.length > 0 && (() => {
+          const mySubs = list.map(h => subFor(h.id)).filter(Boolean);
+          const completion = list.length ? Math.round((mySubs.length / list.length) * 100) : 0;
           const myGraded = mySubs.filter(s => s.score != null);
           const myAvg = myGraded.length ? Math.round(myGraded.reduce((n, s) => n + s.score, 0) / myGraded.length * 100) : 0;
-          const scoreBars = myHw.filter(h => { const s = subFor(h.id); return s && s.score != null; })
+          const scoreBars = list.filter(h => { const s = subFor(h.id); return s && s.score != null; })
             .map(h => ({ label: h.id.replace("HW-", "#"), value: Math.round(subFor(h.id).score * 100) }));
           return (
             <Card style={{ marginBottom: 20 }}>
               <div style={{ color: C.goldLt, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: .6, marginBottom: 14 }}>My progress</div>
               <div style={{ display: "flex", justifyContent: "space-around", flexWrap: "wrap", gap: 16, marginBottom: scoreBars.length ? 18 : 0 }}>
-                <Donut pct={completion} label="Completed" sub={`${mySubs.length} of ${myHw.length}`} />
+                <Donut pct={completion} label="Completed" sub={`${mySubs.length} of ${list.length}`} />
                 <Donut pct={myAvg} label="Average score" sub={myGraded.length ? `${myGraded.length} graded` : "none graded yet"} />
               </div>
               {scoreBars.length > 0 && (
@@ -287,9 +308,9 @@ function Student({ me, homework, submissions, onExit, refresh }) {
           );
         })()}
 
-        {myHw.length === 0 && <Card><div style={{ color: C.ash, textAlign: "center", padding: 20 }}>Nothing assigned yet.</div></Card>}
+        {list.length === 0 && <Card><div style={{ color: C.ash, textAlign: "center", padding: 20 }}>No {tab === "exams" ? "exams" : "homework"} assigned yet.</div></Card>}
         <div style={{ display: "grid", gap: 14 }}>
-          {myHw.map(h => {
+          {list.map(h => {
             const sub = subFor(h.id);
             return (
               <Card key={h.id} hover onClick={() => setOpenId(h.id)} style={{ cursor: "pointer" }}>
@@ -470,12 +491,13 @@ function Teacher({ students, homework, submissions, onExit, refresh }) {
       <TopBar subtitle="Teacher dashboard" onExit={onExit} right={<Pill>{homework.length} assignments</Pill>} />
       <div style={{ maxWidth: 860, margin: "0 auto", padding: "24px 16px 60px" }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 22, flexWrap: "wrap" }}>
-          {[["home", "Overview"], ["create", "+ Assign homework"], ["assignments", `Assignments (${homework.length})`], ["students", "+ Add student"], ["manage", `Students (${students.length})`], ["subs", `Submissions (${submissions.length})`], ["charts", "📊 Charts"]].map(([k, l]) => (
+          {[["home", "Overview"], ["create", "+ Assign homework"], ["exam", "+ Create exam"], ["assignments", `Assignments (${homework.length})`], ["students", "+ Add student"], ["manage", `Students (${students.length})`], ["subs", `Submissions (${submissions.length})`], ["charts", "📊 Charts"]].map(([k, l]) => (
             <button key={k} onClick={() => setView(k)} style={{ padding: "10px 16px", borderRadius: 10, border: `1px solid ${view === k ? C.gold : C.line}`, cursor: "pointer", fontWeight: 700, fontSize: 14, background: view === k ? "rgba(230,180,60,.12)" : "transparent", color: view === k ? C.gold : C.ash }}>{l}</button>
           ))}
         </div>
         {view === "home" && <TeacherHome students={students} homework={homework} submissions={submissions} go={setView} />}
-        {view === "create" && <CreateHomework homework={homework} onCreated={() => { setView("home"); refresh(); }} />}
+        {view === "create" && <CreateHomework homework={homework} students={students} type="homework" onCreated={() => { setView("home"); refresh(); }} />}
+        {view === "exam" && <CreateHomework homework={homework} students={students} type="exam" onCreated={() => { setView("home"); refresh(); }} />}
         {view === "assignments" && <ManageAssignments homework={homework} students={students} submissions={submissions} refresh={refresh} />}
         {view === "students" && <AddStudent students={students} onAdded={refresh} />}
         {view === "manage" && <ManageStudents students={students} refresh={refresh} />}
@@ -776,7 +798,7 @@ function ManageAssignments({ homework, students, submissions, refresh }) {
       {msg && <div style={{ background: C.redBg, color: C.red, padding: "10px 14px", borderRadius: 10, marginBottom: 14, fontSize: 14 }}>{msg.m}</div>}
       <div style={{ display: "grid", gap: 12 }}>
         {homework.map(h => {
-          const groupStudents = students.filter(s => s.group === h.group);
+          const groupStudents = targetStudents(h, students);
           const subbed = submissions.filter(s => s.hw_id === h.id);
           const missing = groupStudents.filter(s => !subbed.find(x => x.student_id === s.id));
           return (
@@ -840,7 +862,7 @@ function ManageAssignments({ homework, students, submissions, refresh }) {
 
 function TeacherCharts({ students, homework, submissions }) {
   // overall completion
-  const expected = homework.reduce((n, h) => n + students.filter(s => s.group === h.group).length, 0);
+  const expected = homework.reduce((n, h) => n + targetStudents(h, students).length, 0);
   const rate = expected ? Math.round((submissions.length / expected) * 100) : 0;
   const graded = submissions.filter(s => s.score != null);
   const avg = graded.length ? Math.round(graded.reduce((n, s) => n + s.score, 0) / graded.length * 100) : 0;
@@ -879,7 +901,7 @@ function TeacherCharts({ students, homework, submissions }) {
 }
 
 function TeacherHome({ students, homework, submissions, go }) {
-  const expected = homework.reduce((n, h) => n + students.filter(s => s.group === h.group).length, 0);
+  const expected = homework.reduce((n, h) => n + targetStudents(h, students).length, 0);
   const rate = expected ? Math.round((submissions.length / expected) * 100) : 0;
   const graded = submissions.filter(s => s.score != null);
   const avg = graded.length ? Math.round(graded.reduce((n, s) => n + s.score, 0) / graded.length * 100) : "—";
@@ -894,7 +916,7 @@ function TeacherHome({ students, homework, submissions, go }) {
       <h3 style={{ fontFamily: "Georgia,serif", fontSize: 19, marginBottom: 12 }}>Assignments & who's missing</h3>
       <div style={{ display: "grid", gap: 12 }}>
         {homework.map(h => {
-          const gs = students.filter(s => s.group === h.group);
+          const gs = targetStudents(h, students);
           const subbed = submissions.filter(s => s.hw_id === h.id);
           const missing = gs.filter(s => !subbed.find(x => x.student_id === s.id));
           return (
@@ -917,27 +939,35 @@ function TeacherHome({ students, homework, submissions, go }) {
   );
 }
 
-function CreateHomework({ homework, onCreated }) {
+function CreateHomework({ homework, students, onCreated, type = "homework" }) {
+  const isExam = type === "exam";
+  const prefix = isExam ? "EX-" : "HW-";
+  const countOfType = homework.filter(h => (h.type || "homework") === type).length;
   const [f, setF] = useState({
-    id: "HW-" + String(homework.length + 1).padStart(3, "0"), title: "", group: GROUPS[0],
+    id: prefix + String(countOfType + 1).padStart(3, "0"), title: "", group: GROUPS[0],
     subject: "Math", skill: "Algebra", difficulty: "Medium",
     due: new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10), mode: "quiz", instructions: "",
   });
   const [qs, setQs] = useState([{ q: "", a: "" }]);
   const [hwFile, setHwFile] = useState(null);
+  const [target, setTarget] = useState("group"); // "group" or "individuals"
+  const [picked, setPicked] = useState([]); // student ids when individuals
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const fileRef = useRef();
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const groupStudents = (students || []).filter(s => s.group === f.group);
+  const togglePick = id => setPicked(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
   const valid = f.title.trim() && f.instructions.trim() &&
     (f.mode === "quiz" ? qs.every(q => q.q.trim()) : f.mode === "file" ? !!hwFile : true);
+  const label = isExam ? "exam" : "homework";
 
   const save = async () => {
-    // Clear, specific validation messages instead of a silently-disabled button
-    if (!f.title.trim()) { setErr("Please enter a Title for the homework."); return; }
+    if (!f.title.trim()) { setErr(`Please enter a Title for the ${label}.`); return; }
     if (!f.instructions.trim()) { setErr("Please enter Instructions."); return; }
     if (f.mode === "quiz" && !qs.some(q => q.q.trim())) { setErr("Add at least one question."); return; }
-    if (f.mode === "file" && !hwFile) { setErr("Attach the homework file students will download."); return; }
+    if (f.mode === "file" && !hwFile) { setErr(`Attach the ${label} file students will download.`); return; }
+    if (target === "individuals" && picked.length === 0) { setErr("Pick at least one student, or choose Whole group."); return; }
     setSaving(true); setErr("");
     try {
       let file_url = null, file_name = null;
@@ -952,11 +982,11 @@ function CreateHomework({ homework, onCreated }) {
       // ensure a unique id even if the typed one already exists
       let id = f.id;
       if (homework.some(h => h.id === id)) id = id + "-" + Date.now().toString().slice(-4);
-      const row = { ...f, id, questions: f.mode === "quiz" ? qs.filter(q => q.q.trim()) : [], file_url, file_name };
+      const row = { ...f, id, type, assigned_to: target === "individuals" ? picked : null, questions: f.mode === "quiz" ? qs.filter(q => q.q.trim()) : [], file_url, file_name };
       const { error } = await supabase.from("homework").insert(row);
       if (error) {
-        if (/column .* does not exist|file_url|file_name/i.test(error.message))
-          throw new Error("The database is missing the file columns. Run add_file_homework.sql in Supabase, then try again.");
+        if (/column .* does not exist|file_url|file_name|assigned_to|type/i.test(error.message))
+          throw new Error("The database is missing some columns. Run add_exams_and_targeting.sql (and add_file_homework.sql) in Supabase, then try again.");
         throw error;
       }
       onCreated();
@@ -965,12 +995,12 @@ function CreateHomework({ homework, onCreated }) {
 
   return (
     <Card style={{ padding: 22 }}>
-      <h3 style={{ fontFamily: "Georgia,serif", fontSize: 20, marginBottom: 18 }}>Assign homework</h3>
+      <h3 style={{ fontFamily: "Georgia,serif", fontSize: 20, marginBottom: 18 }}>{isExam ? "Create exam" : "Assign homework"}</h3>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-        <Field label="Homework ID"><input style={inputStyle} value={f.id} onChange={e => set("id", e.target.value)} /></Field>
-        <Field label="Group"><select style={inputStyle} value={f.group} onChange={e => set("group", e.target.value)}>{GROUPS.map(g => <option key={g} value={g}>{g}</option>)}</select></Field>
+        <Field label={isExam ? "Exam ID" : "Homework ID"}><input style={inputStyle} value={f.id} onChange={e => set("id", e.target.value)} /></Field>
+        <Field label="Group"><select style={inputStyle} value={f.group} onChange={e => { set("group", e.target.value); setPicked([]); }}>{GROUPS.map(g => <option key={g} value={g}>{g}</option>)}</select></Field>
       </div>
-      <Field label="Title"><input style={inputStyle} value={f.title} placeholder="e.g. Quadratic Equations" onChange={e => set("title", e.target.value)} /></Field>
+      <Field label="Title"><input style={inputStyle} value={f.title} placeholder={isExam ? "e.g. Midterm Exam" : "e.g. Quadratic Equations"} onChange={e => set("title", e.target.value)} /></Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
         <Field label="Subject"><select style={inputStyle} value={f.subject} onChange={e => set("subject", e.target.value)}><option>Math</option><option>English</option></select></Field>
         <Field label="Skill"><select style={inputStyle} value={f.skill} onChange={e => set("skill", e.target.value)}>{["Algebra", "Geometry", "Data", "Reading-Detail", "Reading-Inference", "Grammar", "Vocab-in-Context", "Critical-Thinking"].map(s => <option key={s}>{s}</option>)}</select></Field>
@@ -1012,8 +1042,42 @@ function CreateHomework({ homework, onCreated }) {
           <div style={{ marginTop: 10 }}><Btn kind="ghost" small onClick={() => setQs([...qs, { q: "", a: "" }])}>+ Add question</Btn></div>
         </div>
       )}
+      {/* Who gets this — whole group or specific students */}
+      <div style={{ marginTop: 4, marginBottom: 4 }}>
+        <div style={{ color: C.goldLt, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 9, opacity: .85 }}>Assign to</div>
+        <div style={{ display: "flex", gap: 6, marginBottom: target === "individuals" ? 14 : 0, background: "#0E0E0E", padding: 5, borderRadius: 12, border: `1px solid ${C.line}` }}>
+          {[["group", `Whole group (${groupStudents.length})`], ["individuals", "Specific students"]].map(([k, l]) => (
+            <button key={k} onClick={() => setTarget(k)} style={{ flex: 1, padding: "10px 0", borderRadius: 9, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 13,
+              background: target === k ? `linear-gradient(135deg, ${C.goldLt}, ${C.gold})` : "transparent", color: target === k ? "#1a1300" : C.ash }}>{l}</button>
+          ))}
+        </div>
+        {target === "individuals" && (
+          <div style={{ background: "#0E0E0E", border: `1px solid ${C.line}`, borderRadius: 12, padding: 12, maxHeight: 240, overflowY: "auto" }}>
+            {groupStudents.length === 0 ? <div style={{ color: C.ash, fontSize: 13, padding: 8 }}>No students in {f.group} yet.</div> :
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                  <span style={{ color: C.ash, fontSize: 12 }}>{picked.length} selected</span>
+                  <button onClick={() => setPicked(picked.length === groupStudents.length ? [] : groupStudents.map(s => s.id))}
+                    style={{ background: "none", border: "none", color: C.gold, cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+                    {picked.length === groupStudents.length ? "Clear all" : "Select all"}
+                  </button>
+                </div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  {groupStudents.map(s => (
+                    <button key={s.id} onClick={() => togglePick(s.id)}
+                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 9, cursor: "pointer", textAlign: "left",
+                        border: `1px solid ${picked.includes(s.id) ? C.gold : C.line}`, background: picked.includes(s.id) ? "rgba(230,180,60,.1)" : "transparent", color: C.cream, fontSize: 14 }}>
+                      <span style={{ width: 18, height: 18, borderRadius: 5, border: `1px solid ${picked.includes(s.id) ? C.gold : C.ash}`, background: picked.includes(s.id) ? C.gold : "transparent", color: "#1a1300", fontWeight: 900, fontSize: 12, display: "grid", placeItems: "center", flexShrink: 0 }}>{picked.includes(s.id) ? "✓" : ""}</span>
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+              </>}
+          </div>
+        )}
+      </div>
       {err && <div style={{ background: C.redBg, color: C.red, fontSize: 14, fontWeight: 600, padding: "12px 14px", borderRadius: 10, marginTop: 16, border: `1px solid ${C.red}44` }}>⚠️ {err}</div>}
-      <div style={{ marginTop: 16 }}><Btn full disabled={saving} onClick={save}>{saving ? "Assigning…" : `Assign to ${f.group}`}</Btn></div>
+      <div style={{ marginTop: 16 }}><Btn full disabled={saving} onClick={save}>{saving ? "Saving…" : isExam ? "Create exam" : (target === "individuals" ? `Assign to ${picked.length} student${picked.length === 1 ? "" : "s"}` : `Assign to ${f.group}`)}</Btn></div>
     </Card>
   );
 }
