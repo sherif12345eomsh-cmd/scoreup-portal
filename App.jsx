@@ -491,7 +491,7 @@ function Teacher({ students, homework, submissions, onExit, refresh }) {
       <TopBar subtitle="Teacher dashboard" onExit={onExit} right={<Pill>{homework.length} assignments</Pill>} />
       <div style={{ maxWidth: 860, margin: "0 auto", padding: "24px 16px 60px" }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 22, flexWrap: "wrap" }}>
-          {[["home", "Overview"], ["create", "+ Assign homework"], ["exam", "+ Create exam"], ["assignments", `Assignments (${homework.length})`], ["students", "+ Add student"], ["manage", `Students (${students.length})`], ["subs", `Submissions (${submissions.length})`], ["charts", "📊 Charts"]].map(([k, l]) => (
+          {[["home", "Overview"], ["create", "+ Assign homework"], ["exam", "+ Create exam"], ["assignments", "📁 Homework & Exams"], ["students", "+ Add student"], ["manage", `Students (${students.length})`], ["subs", `Submissions (${submissions.length})`], ["charts", "📊 Charts"]].map(([k, l]) => (
             <button key={k} onClick={() => setView(k)} style={{ padding: "10px 16px", borderRadius: 10, border: `1px solid ${view === k ? C.gold : C.line}`, cursor: "pointer", fontWeight: 700, fontSize: 14, background: view === k ? "rgba(230,180,60,.12)" : "transparent", color: view === k ? C.gold : C.ash }}>{l}</button>
           ))}
         </div>
@@ -767,12 +767,17 @@ function Donut({ pct, label, sub }) {
 }
 
 function ManageAssignments({ homework, students, submissions, refresh }) {
+  const [folder, setFolder] = useState("homework");
   const [editId, setEditId] = useState(null);
   const [ef, setEf] = useState({});
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
   const [showWho, setShowWho] = useState(null);
+
+  const homeworkItems = homework.filter(h => (h.type || "homework") !== "exam");
+  const examItems = homework.filter(h => (h.type || "homework") === "exam");
+  const list = folder === "exams" ? examItems : homeworkItems;
 
   const startEdit = h => { setEditId(h.id); setEf({ title: h.title, group: h.group, subject: h.subject, difficulty: h.difficulty, due: h.due, instructions: h.instructions }); setMsg(null); };
   const saveEdit = async (h) => {
@@ -791,13 +796,22 @@ function ManageAssignments({ homework, students, submissions, refresh }) {
     refresh();
   };
 
-  if (!homework.length) return <Card><div style={{ textAlign: "center", color: C.ash, padding: 30 }}>No assignments yet. Use "+ Assign homework" to create one.</div></Card>;
-
   return (
     <div>
+      {/* Homework / Exams folder toggle */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 18, background: "#0E0E0E", padding: 5, borderRadius: 12, border: `1px solid ${C.line}` }}>
+        {[["homework", `📁 Homework (${homeworkItems.length})`], ["exams", `📁 Exams (${examItems.length})`]].map(([k, l]) => (
+          <button key={k} onClick={() => { setFolder(k); setEditId(null); setShowWho(null); setConfirmDel(null); }} style={{ flex: 1, padding: "11px 0", borderRadius: 9, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 14,
+            background: folder === k ? `linear-gradient(135deg, ${C.goldLt}, ${C.gold})` : "transparent", color: folder === k ? "#1a1300" : C.ash }}>{l}</button>
+        ))}
+      </div>
+
       {msg && <div style={{ background: C.redBg, color: C.red, padding: "10px 14px", borderRadius: 10, marginBottom: 14, fontSize: 14 }}>{msg.m}</div>}
+
+      {list.length === 0 && <Card><div style={{ textAlign: "center", color: C.ash, padding: 30 }}>No {folder === "exams" ? "exams" : "homework"} yet. Use "{folder === "exams" ? "+ Create exam" : "+ Assign homework"}" to create one.</div></Card>}
+
       <div style={{ display: "grid", gap: 12 }}>
-        {homework.map(h => {
+        {list.map(h => {
           const groupStudents = targetStudents(h, students);
           const subbed = submissions.filter(s => s.hw_id === h.id);
           const missing = groupStudents.filter(s => !subbed.find(x => x.student_id === s.id));
@@ -821,6 +835,8 @@ function ManageAssignments({ homework, students, submissions, refresh }) {
                 <>
                   <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
                     <Pill tone="ash">{h.id}</Pill><Pill>{h.group}</Pill>
+                    {(h.type || "homework") === "exam" && <Pill tone="amber">EXAM</Pill>}
+                    {h.assigned_to && Array.isArray(h.assigned_to) && h.assigned_to.length > 0 && <Pill tone="ash">👤 {h.assigned_to.length} individual</Pill>}
                     <span style={{ fontWeight: 700, fontSize: 16 }}>{h.title}</span>
                     <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
                       <Pill tone="green">{subbed.length} in</Pill>
